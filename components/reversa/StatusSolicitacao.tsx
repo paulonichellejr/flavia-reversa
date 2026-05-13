@@ -182,12 +182,12 @@ export function StatusSolicitacaoCard({
               </p>
             </div>
 
-            {/* Aviso: PDF enviado por e-mail */}
+            {/* Aviso: código também enviado por e-mail */}
             <div className="flex items-start gap-3 bg-flavia-50 border border-flavia-200 rounded-flavia px-4 py-3">
               <Mail className="h-5 w-5 text-flavia-500 shrink-0 mt-0.5" />
               <p className="text-sm text-mocha-700 leading-relaxed">
-                O <strong>PDF com a etiqueta e a Declaração de Conteúdo</strong> foi enviado para o seu e-mail.
-                Imprima, cole na embalagem e leve até qualquer agência dos Correios. O envio é gratuito! 💛
+                O <strong>código de rastreio também foi enviado para o seu e-mail</strong>.
+                Não precisa imprimir nada — basta apresentar o código no balcão dos Correios. O envio é gratuito! 💛
               </p>
             </div>
           </div>

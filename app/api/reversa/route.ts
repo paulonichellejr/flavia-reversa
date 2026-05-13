@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { validarPedidoBling, abrirDevolucaoBling } from '@/lib/bling';
-import { gerarEtiquetaReversa, downloadPdfBytes } from '@/lib/melhor-envio';
+import { gerarEtiquetaReversa } from '@/lib/melhor-envio';
 import { criarLogReversa, atualizarLogReversa, uploadFotos } from '@/lib/supabase';
 import { enviarEmailDevolucao, enviarEmailFallback } from '@/lib/email';
 import { rateLimit } from '@/lib/rate-limit';
@@ -214,10 +214,7 @@ export async function POST(req: NextRequest) {
 
     try {
       if (etiqueta) {
-        // Baixa os bytes do PDF para anexar no e-mail (não bloqueia o fluxo se falhar)
-        const pdfBuffer = await downloadPdfBytes(etiqueta.id).catch(() => null);
-
-        // Etiqueta gerada com sucesso → e-mail completo com código + PDF em anexo
+        // Etiqueta gerada com sucesso → e-mail com código de rastreio
         await enviarEmailDevolucao({
           clienteNome:   nome,
           clienteEmail:  emailDestino,
@@ -225,7 +222,6 @@ export async function POST(req: NextRequest) {
           codigoPostagem: etiqueta.codigo_postagem,
           instrucoes:     etiqueta.instrucoes,
           prazoPostagem:  etiqueta.prazo_postagem,
-          pdfBuffer:      pdfBuffer ?? undefined,
         });
       } else {
         // Etiqueta falhou → e-mail de fallback avisando que a equipe entrará em contato

@@ -75,7 +75,6 @@ export interface EmailDevolucaoParams {
   codigoPostagem: string;
   instrucoes: string;
   prazoPostagem?: string;
-  pdfBuffer?: Buffer; // PDF da etiqueta + Declaração de Conteúdo para anexar
 }
 
 // ─── Envia e-mail de confirmação de devolução ─────────────────
@@ -87,7 +86,6 @@ export async function enviarEmailDevolucao(params: EmailDevolucaoParams): Promis
     codigoPostagem,
     instrucoes,
     prazoPostagem = '5 dias úteis após receber esta confirmação',
-    pdfBuffer,
   } = params;
 
   const t = getTransporter();
@@ -102,8 +100,7 @@ export async function enviarEmailDevolucao(params: EmailDevolucaoParams): Promis
   }
 
   const primeiroNome = clienteNome.split(' ')[0] ?? clienteNome;
-  const temPdf = Boolean(pdfBuffer && pdfBuffer.length > 0);
-  const html = gerarHtmlEmail({ primeiroNome, numeroPedido, codigoPostagem, instrucoes, prazoPostagem, temPdf });
+  const html = gerarHtmlEmail({ primeiroNome, numeroPedido, codigoPostagem, instrucoes, prazoPostagem });
 
   try {
     await t.sendMail({
@@ -112,18 +109,8 @@ export async function enviarEmailDevolucao(params: EmailDevolucaoParams): Promis
       replyTo: LOJA_EMAIL,
       subject: `✅ Devolução confirmada — Pedido #${numeroPedido} | Loja Flávia Organiza`,
       html,
-      // Anexa o PDF da etiqueta + Declaração de Conteúdo quando disponível
-      attachments: temPdf
-        ? [
-            {
-              filename: `etiqueta-devolucao-pedido-${numeroPedido}.pdf`,
-              content: pdfBuffer,
-              contentType: 'application/pdf',
-            },
-          ]
-        : [],
     });
-    console.log(`[Email] ✅ E-mail enviado para ${clienteEmail} — Pedido #${numeroPedido}${temPdf ? ' (com PDF anexado)' : ' (sem PDF — não disponível)'}`);
+    console.log(`[Email] ✅ E-mail enviado para ${clienteEmail} — Pedido #${numeroPedido}`);
   } catch (err) {
     console.error('[Email] Erro ao enviar via Gmail SMTP:', err);
   }
@@ -182,9 +169,8 @@ function gerarHtmlEmail(p: {
   codigoPostagem: string;
   instrucoes: string;
   prazoPostagem: string;
-  temPdf?: boolean;
 }): string {
-  const { primeiroNome, numeroPedido, codigoPostagem, instrucoes, prazoPostagem, temPdf } = p;
+  const { primeiroNome, numeroPedido, codigoPostagem, instrucoes, prazoPostagem } = p;
 
   const blocoCodigoRastreio = codigoPostagem
     ? `
@@ -212,22 +198,13 @@ function gerarHtmlEmail(p: {
       </td></tr>
     </table>`;
 
-  // Bloco de aviso sobre o PDF em anexo (substitui o antigo botão de download)
-  const blocoAnexo = temPdf
-    ? `
+  // Bloco de instrução para postagem
+  const blocoInstrucao = `
     <table width="100%" cellpadding="0" cellspacing="0" style="background:#EAF4EF;border-left:4px solid ${COR_BTN};border-radius:0 8px 8px 0;margin-bottom:20px;">
       <tr><td style="padding:14px 18px;">
         <p style="margin:0;font-size:14px;line-height:1.7;color:${COR_INFO_TEXTO};">
-          📎 <strong>A etiqueta e a Declaração de Conteúdo estão em anexo neste e-mail</strong> (arquivo PDF).
-          Imprima o anexo, cole na embalagem e leve até qualquer agência dos Correios. O envio é gratuito! 💛
-        </p>
-      </td></tr>
-    </table>`
-    : `
-    <table width="100%" cellpadding="0" cellspacing="0" style="background:#FEF3DC;border-left:4px solid #D4963A;border-radius:0 8px 8px 0;margin-bottom:20px;">
-      <tr><td style="padding:14px 18px;">
-        <p style="margin:0;font-size:14px;color:#7a5200;line-height:1.6;">
-          📦 Sua etiqueta foi gerada com sucesso! Nossa equipe enviará o PDF da etiqueta e a Declaração de Conteúdo em breve.
+          📦 Leve o produto embalado até qualquer agência dos Correios e informe o código acima no balcão.
+          Não precisa imprimir nada — o código é suficiente para a postagem. O envio é gratuito! 💛
         </p>
       </td></tr>
     </table>`;
@@ -288,7 +265,7 @@ function gerarHtmlEmail(p: {
               </td></tr>
             </table>
 
-            ${blocoAnexo}
+            ${blocoInstrucao}
 
             <p style="margin:0 0 24px;font-size:13px;color:${COR_TEXTO_MUTED};text-align:center;">
               ⏰ Prazo para postagem: <strong style="color:${COR_TEXTO_SEC};">${prazoPostagem}</strong>

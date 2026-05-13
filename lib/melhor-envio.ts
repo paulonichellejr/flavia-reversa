@@ -344,40 +344,15 @@ export async function gerarEtiquetaReversa(
     }
 
     // 4. Busca o PDF da etiqueta + Declaração de Conteúdo
-    // O ME gera automaticamente a Declaração de Conteúdo para pedidos non_commercial,
-    // incluindo todos os produtos da lista. O PDF é compartilhado com o cliente.
-    let urlEtiquetaInterna = '';
-    try {
-      const imprimirRes = await fetch(`${BASE_URL}/me/shipment/print`, {
-        method: 'POST',
-        headers: headersAuth(),
-        body: JSON.stringify({ mode: 'public', orders: [itemId] }),
-      });
-      const imprimir = await imprimirRes.json();
-      urlEtiquetaInterna = imprimir?.url || imprimir?.[itemId]?.url || '';
-      if (urlEtiquetaInterna) {
-        console.log('[MelhorEnvio] ✅ PDF da etiqueta+declaração gerado:', urlEtiquetaInterna);
-      } else {
-        console.warn('[MelhorEnvio] ⚠️  PDF não disponível ainda. Resposta:', JSON.stringify(imprimir));
-      }
-    } catch {
-      // PDF é gerado assincronamente pelo ME — pode não estar pronto imediatamente
-      console.warn('[MelhorEnvio] PDF ainda não pronto. O cliente pode acessar via código de postagem nos Correios.');
-    }
-
-    // Mensagem de instrução adaptada conforme disponibilidade do código e do PDF
+    // Instrução: cliente só precisa do código — não precisa imprimir etiqueta
     const instrucoes = codigoPostagem
-      ? 'Leve o produto embalado até qualquer agência dos Correios e informe o código abaixo no balcão. ' +
-        'O envio é gratuito para você! Você também pode baixar e imprimir a etiqueta para colar na embalagem. 💛'
-      : 'Sua etiqueta foi gerada com sucesso! O código de rastreio e o PDF serão enviados para o seu e-mail pelo Melhor Envio em instantes. ' +
-        'Aguarde o e-mail e leve o produto embalado até qualquer agência dos Correios. O envio é gratuito! 💛';
+      ? 'Leve o produto embalado até qualquer agência dos Correios e informe o código abaixo no balcão. O envio é gratuito para você! 💛'
+      : 'Sua solicitação foi registrada! O código de rastreio será enviado para o seu e-mail em instantes. Aguarde e leve o produto embalado até qualquer agência dos Correios. O envio é gratuito! 💛';
 
     const etiqueta: EtiquetaMelhorEnvio = {
       id: itemId,
       protocolo: `ME-${itemId}`,
       codigo_postagem: codigoPostagem,
-      url_etiqueta: urlEtiquetaInterna, // salvo no Supabase (uso interno da loja)
-      url_download: urlEtiquetaInterna, // exibido ao cliente para baixar etiqueta+declaração
       instrucoes,
       prazo_postagem: '5 dias úteis após receber esta confirmação',
     };
@@ -396,73 +371,6 @@ export async function gerarEtiquetaReversa(
   }
 }
 
-/**
- * Baixa os bytes do PDF da etiqueta + Declaração de Conteúdo.
- * Tenta dois caminhos: (1) POST /shipment/print com mode=private retornando
- * o PDF diretamente; (2) GET na URL pública com o Bearer token.
- * Retorna null se nenhum dos caminhos funcionar (não bloqueia o fluxo).
- */
-export async function downloadPdfBytes(itemId: string): Promise<Buffer | null> {
-  try {
-    // Tentativa 1: mode=private — alguns ambientes do ME retornam o PDF binário direto
-    const resPrivate = await fetch(`${BASE_URL}/me/shipment/print`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${TOKEN}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/pdf, application/json',
-        'User-Agent': `Loja Flávia Organiza (${LOJA_EMAIL})`,
-      },
-      body: JSON.stringify({ mode: 'private', orders: [itemId] }),
-    });
-
-    const contentTypePrivate = resPrivate.headers.get('content-type') || '';
-    if (contentTypePrivate.includes('application/pdf')) {
-      const ab = await resPrivate.arrayBuffer();
-      console.log('[MelhorEnvio] ✅ PDF baixado diretamente (mode=private)');
-      return Buffer.from(ab);
-    }
-
-    // Tentativa 2: extrai URL do JSON e faz GET com auth
-    let urlPdf = '';
-    try {
-      const json = await resPrivate.json();
-      urlPdf = json?.url || json?.[itemId]?.url || '';
-    } catch { /* resposta não era JSON */ }
-
-    if (!urlPdf) {
-      // Tenta obter a URL via mode=public como fallback
-      const resPub = await fetch(`${BASE_URL}/me/shipment/print`, {
-        method: 'POST',
-        headers: headersAuth(),
-        body: JSON.stringify({ mode: 'public', orders: [itemId] }),
-      });
-      if (resPub.ok) {
-        const pubJson = await resPub.json();
-        urlPdf = pubJson?.url || pubJson?.[itemId]?.url || '';
-      }
-    }
-
-    if (urlPdf) {
-      const resPdf = await fetch(urlPdf, {
-        headers: { 'Authorization': `Bearer ${TOKEN}` },
-      });
-      const ct = resPdf.headers.get('content-type') || '';
-      if (resPdf.ok && ct.includes('application/pdf')) {
-        const ab = await resPdf.arrayBuffer();
-        console.log('[MelhorEnvio] ✅ PDF baixado via URL pública com auth');
-        return Buffer.from(ab);
-      }
-      console.warn('[MelhorEnvio] ⚠️  URL do PDF retornou content-type inesperado:', ct);
-    }
-
-    console.warn('[MelhorEnvio] ⚠️  Não foi possível baixar o PDF para anexar no e-mail (o link de download ainda será enviado).');
-    return null;
-  } catch (err) {
-    console.warn('[MelhorEnvio] Erro ao baixar PDF para e-mail:', err);
-    return null;
-  }
-}
 
 function headersAuth() {
   return {
