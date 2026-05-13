@@ -223,9 +223,8 @@ export async function POST(req: NextRequest) {
           clienteEmail:  emailDestino,
           numeroPedido,
           codigoPostagem: etiqueta.codigo_postagem,
-          urlDownload:    etiqueta.url_download,
           instrucoes:     etiqueta.instrucoes,
-          prazoPestagemm: etiqueta.prazo_postagem,
+          prazoPostagem:  etiqueta.prazo_postagem,
           pdfBuffer:      pdfBuffer ?? undefined,
         });
       } else {
@@ -234,7 +233,6 @@ export async function POST(req: NextRequest) {
           clienteNome:  nome,
           clienteEmail: emailDestino,
           numeroPedido,
-          lojaEmail:    process.env.LOJA_EMAIL,
         });
       }
     } catch (emailErr) {

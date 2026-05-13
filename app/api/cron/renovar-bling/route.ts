@@ -152,13 +152,12 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// ─── Helper: monta URL de re-autorização ─────────────────────
+// ─── Helper: monta URL de re-autorização (sem expor CRON_SECRET) ─────────────
+// O secret NÃO é incluído na URL retornada em respostas JSON —
+// quem precisar re-autorizar já conhece o secret.
 function _reAuthUrl(req: Request | NextRequest): string {
-  const cronSecret = process.env.CRON_SECRET;
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL
     ?? (req as NextRequest).nextUrl?.origin
     ?? 'https://sua-url.vercel.app';
-  return cronSecret
-    ? `${baseUrl}/api/auth/bling?secret=${cronSecret}`
-    : `${baseUrl}/api/auth/bling`;
+  return `${baseUrl}/api/auth/bling`;
 }

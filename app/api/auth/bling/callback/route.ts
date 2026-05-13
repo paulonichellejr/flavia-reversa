@@ -21,8 +21,20 @@ const BLING_TOKEN_URL = 'https://www.bling.com.br/Api/v3/oauth/token';
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
 
-  const code  = searchParams.get('code');
-  const error = searchParams.get('error');
+  const code        = searchParams.get('code');
+  const error       = searchParams.get('error');
+  const stateParam  = searchParams.get('state');
+  const stateCookie = req.cookies.get('bling_oauth_state')?.value;
+
+  // Valida CSRF: o state retornado pelo Bling deve bater com o cookie salvo no início do fluxo
+  if (!stateCookie || stateParam !== stateCookie) {
+    console.error('[BlingOAuth Callback] Falha na validação CSRF — state não confere.');
+    return paginaResultado({
+      sucesso: false,
+      titulo: 'Sessão inválida',
+      mensagem: 'A sessão de autorização expirou ou foi adulterada. Inicie o fluxo novamente.',
+    });
+  }
 
   // Bling retornou erro de autorização
   if (error) {

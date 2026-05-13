@@ -11,16 +11,6 @@ export type StatusSolicitacao =
   | 'concluido'
   | 'erro';
 
-export interface FormularioReversaData {
-  nome: string;
-  cpf: string;
-  email: string;
-  numeroPedido: string;
-  itensSelecionados: number[];
-  motivo: string;
-  descricao: string;
-  fotos: File[];
-}
 
 export interface PedidoTray {
   id: string;
@@ -51,11 +41,6 @@ export interface PedidoItem {
   valor_unitario: number;
 }
 
-export interface PedidoBling {
-  id: string;
-  numero: string;
-  situacao: string;
-}
 
 export interface EtiquetaMelhorEnvio {
   id: string;

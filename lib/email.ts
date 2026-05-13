@@ -15,10 +15,11 @@
  * NOTA: Não use sua senha normal do Gmail — crie uma Senha de App como acima.
  */
 
+import type { Transporter } from 'nodemailer';
+
 // AVISO: o pacote `nodemailer` precisa estar instalado.
 // Na pasta do projeto, execute: npm install nodemailer @types/nodemailer
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let createTransport: ((opts: unknown) => unknown) | null = null;
+let createTransport: ((opts: unknown) => Transporter) | null = null;
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   createTransport = require('nodemailer').createTransport;
@@ -50,13 +51,12 @@ const COR_TEXTO_SEC     = '#485059'; // text-secondary
 const COR_TEXTO_MUTED   = '#706E6F'; // text-muted
 
 // Lazy-initialized transporter (evita erro em build time)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let transporter: any = null;
-function getTransporter() {
+let transporter: Transporter | null = null;
+function getTransporter(): Transporter | null {
   if (!createTransport) return null;
   if (!GMAIL_USER || !GMAIL_APP_PASSWORD) return null;
   if (!transporter) {
-    transporter = (createTransport as Function)({
+    transporter = createTransport({
       service: 'gmail',
       auth: {
         user: GMAIL_USER,
@@ -73,9 +73,8 @@ export interface EmailDevolucaoParams {
   clienteEmail: string;
   numeroPedido: string;
   codigoPostagem: string;
-  urlDownload?: string;
   instrucoes: string;
-  prazoPestagemm?: string;
+  prazoPostagem?: string;
   pdfBuffer?: Buffer; // PDF da etiqueta + Declaração de Conteúdo para anexar
 }
 
@@ -86,9 +85,8 @@ export async function enviarEmailDevolucao(params: EmailDevolucaoParams): Promis
     clienteEmail,
     numeroPedido,
     codigoPostagem,
-    urlDownload,
     instrucoes,
-    prazoPestagemm = '5 dias úteis após receber esta confirmação',
+    prazoPostagem = '5 dias úteis após receber esta confirmação',
     pdfBuffer,
   } = params;
 
@@ -105,7 +103,7 @@ export async function enviarEmailDevolucao(params: EmailDevolucaoParams): Promis
 
   const primeiroNome = clienteNome.split(' ')[0] ?? clienteNome;
   const temPdf = Boolean(pdfBuffer && pdfBuffer.length > 0);
-  const html = gerarHtmlEmail({ primeiroNome, numeroPedido, codigoPostagem, urlDownload, instrucoes, prazoPestagemm, temPdf });
+  const html = gerarHtmlEmail({ primeiroNome, numeroPedido, codigoPostagem, instrucoes, prazoPostagem, temPdf });
 
   try {
     await t.sendMail({
@@ -136,7 +134,6 @@ export async function enviarEmailFallback(params: {
   clienteNome: string;
   clienteEmail: string;
   numeroPedido: string;
-  lojaEmail?: string;
 }): Promise<void> {
   const { clienteNome, clienteEmail, numeroPedido } = params;
 
@@ -183,12 +180,11 @@ function gerarHtmlEmail(p: {
   primeiroNome: string;
   numeroPedido: string;
   codigoPostagem: string;
-  urlDownload?: string;
   instrucoes: string;
-  prazoPestagemm: string;
+  prazoPostagem: string;
   temPdf?: boolean;
 }): string {
-  const { primeiroNome, numeroPedido, codigoPostagem, instrucoes, prazoPestagemm, temPdf } = p;
+  const { primeiroNome, numeroPedido, codigoPostagem, instrucoes, prazoPostagem, temPdf } = p;
 
   const blocoCodigoRastreio = codigoPostagem
     ? `
@@ -295,7 +291,7 @@ function gerarHtmlEmail(p: {
             ${blocoAnexo}
 
             <p style="margin:0 0 24px;font-size:13px;color:${COR_TEXTO_MUTED};text-align:center;">
-              ⏰ Prazo para postagem: <strong style="color:${COR_TEXTO_SEC};">${prazoPestagemm}</strong>
+              ⏰ Prazo para postagem: <strong style="color:${COR_TEXTO_SEC};">${prazoPostagem}</strong>
             </p>
 
             <hr style="border:none;border-top:1px solid ${COR_BORDA};margin:0 0 20px;">

@@ -23,7 +23,6 @@ const BASE_URL =
     : 'https://melhorenvio.com.br/api/v2';
 
 const TOKEN = process.env.MELHOR_ENVIO_TOKEN!;
-const APP_CLIENT_ID = process.env.MELHOR_ENVIO_CLIENT_ID!;
 const LOJA_EMAIL = process.env.LOJA_EMAIL || 'contato@lojaflaviaorganiza.com.br';
 
 /**

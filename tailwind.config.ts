@@ -76,6 +76,19 @@ const config: Config = {
           100: '#FEF3DC',
           500: '#D4963A',
         },
+        // Tom quente neutro — texto, bordas e fundos dos formulários
+        mocha: {
+          50:  '#FAF7F5',
+          100: '#F0EAE4',
+          200: '#E2D5CC',
+          300: '#CCBAA9',
+          400: '#B09A87',
+          500: '#8C7464',
+          600: '#6E5A4A',
+          700: '#4A3728',
+          800: '#332519',
+          900: '#1E150F',
+        },
       },
       fontFamily: {
         sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],

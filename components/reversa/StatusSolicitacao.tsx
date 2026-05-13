@@ -121,7 +121,22 @@ export function StatusSolicitacaoCard({
         </FlaviaCard>
       )}
 
-      {/* Sucesso */}
+      {/* Sucesso sem etiqueta — processo concluído mas etiqueta não foi gerada */}
+      {isConcluido && !etiqueta && (
+        <FlaviaCard variant="default" padding="md" className="animate-slide-up">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="h-6 w-6 text-flavia-500 shrink-0 mt-0.5" />
+            <div>
+              <h2 className="font-semibold text-mocha-800 text-lg">Solicitação recebida! 💛</h2>
+              <p className="text-sm text-mocha-600 mt-1">
+                Recebemos seu pedido de devolução. Nossa equipe irá entrar em contato em breve para te enviar a etiqueta de postagem.
+              </p>
+            </div>
+          </div>
+        </FlaviaCard>
+      )}
+
+      {/* Sucesso com etiqueta */}
       {isConcluido && etiqueta && (
         <FlaviaCard variant="success" padding="md" className="animate-slide-up">
           <div className="flex flex-col gap-4">

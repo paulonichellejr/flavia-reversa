@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // State aleatório para proteção CSRF
+  // State aleatório para proteção CSRF — salvo em cookie httpOnly e validado no callback
   const state = Math.random().toString(36).substring(2, 15);
 
   const authUrl = new URL(BLING_AUTH_URL);
@@ -62,7 +62,15 @@ export async function GET(req: NextRequest) {
   authUrl.searchParams.set('redirect_uri', redirectUri);
   authUrl.searchParams.set('state', state);
 
-  console.log('[BlingOAuth] Redirecionando para autorização Bling:', authUrl.toString());
+  console.log('[BlingOAuth] Redirecionando para autorização Bling.');
 
-  return NextResponse.redirect(authUrl.toString());
+  const response = NextResponse.redirect(authUrl.toString());
+  response.cookies.set('bling_oauth_state', state, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 300, // 5 minutos — tempo suficiente para o usuário autorizar
+    path: '/',
+  });
+  return response;
 }
