@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ================================================
+   FONTES — LOJA FLÁVIA ORGANIZA
+   Playfair Display: títulos elegantes
+   Inter: corpo de texto legível
+   ================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@400;600;700&display=swap');
+
+:root {
+  --font-inter: 'Inter', system-ui, sans-serif;
+  --font-playfair: 'Playfair Display', Georgia, serif;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-inter);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: #F0F0F0; /* rgb(240,240,240) — fundo real do site */
+    color: #333333;            /* rgb(51,51,51) — texto real do site */
+    min-height: 100dvh;
+  }
+
+  /* Remove outline padrão e usa o do design system */
+  *:focus {
+    outline: none;
+  }
+
+  /* Scrollbar sutil */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-cream-100;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: #D2B6C2; /* rosa-mauve real da marca */
+    border-radius: 9999px;
+  }
+}
+
+@layer utilities {
+  /* Utilitário de font-family para títulos */
+  .font-display {
+    font-family: var(--font-playfair);
+  }
+}
