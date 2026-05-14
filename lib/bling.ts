@@ -639,7 +639,7 @@ export async function criarLogisticaReversaBling(params: {
       to: {
         name:        process.env.LOJA_RAZAO_SOCIAL || 'FLK COMERCIO E SERVICOS DE ORGANIZACAO LTDA',
         email:       LOJA_EMAIL,
-        document:    cnpjLoja,
+        document:    (process.env.LOJA_CPF_RESPONSAVEL || '').replace(/\D/g, ''),
         phone:       '',
         address:     process.env.LOJA_ENDERECO || '',
         complement:  process.env.LOJA_COMPLEMENTO || '',
