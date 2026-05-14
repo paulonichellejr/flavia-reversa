@@ -11,8 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { validarPedidoBling, abrirDevolucaoBling } from '@/lib/bling';
-import { gerarEtiquetaReversa } from '@/lib/melhor-envio';
+import { validarPedidoBling, abrirDevolucaoBling, criarLogisticaReversaBling } from '@/lib/bling';
 import { criarLogReversa, atualizarLogReversa, uploadFotos } from '@/lib/supabase';
 import { enviarEmailDevolucao, enviarEmailFallback } from '@/lib/email';
 import { rateLimit } from '@/lib/rate-limit';
@@ -145,47 +144,26 @@ export async function POST(req: NextRequest) {
       console.warn('[reversa] Falha ao atualizar Bling, continuando...', resultadoDevolucao.erro);
     }
 
-    // ── 6. Gera etiqueta no Melhor Envio ────────────────────
+    // ── 6. Gera etiqueta via módulo de Logística Reversa do Bling ──
+    // O Bling aciona o Melhor Envio internamente e gera a etiqueta do tipo
+    // correto: "Logística Reversa" (não "Agência/Ponto Parceiro").
     await atualizarLogReversa(logId!, { status: 'gerando_etiqueta' });
 
-    // Adapta o pedido Bling para o formato esperado pelo Melhor Envio
-    const pedidoAdaptado = {
-      id: String(pedido.id),
-      numero: String(pedido.numero),
-      status: String(pedido.situacao?.valor ?? ''),
-      data_criacao: pedido.data,
-      valor_total: pedido.valorTotal || 10,
-      cliente: {
-        nome,
-        email,
-        cpf,
-        // Endereço do cliente (aparece na etiqueta dos Correios)
-        cep:         cep.replace(/\D/g, ''),
-        endereco,
-        numero,
-        complemento: complemento || '',
-        bairro,
-        cidade,
-        uf,
-      },
-      // Apenas os itens selecionados, com a quantidade escolhida pelo cliente
-      itens: (pedido.itens ?? [])
-        .filter((item) => itensSelecionados.some((s) => s.id === item.id))
-        .map((item) => {
-          const sel = itensSelecionados.find((s) => s.id === item.id)!;
-          return {
-            id: String(item.id),
-            nome: item.descricao,
-            quantidade: sel.quantidade,           // quantidade escolhida (não a total do pedido)
-            valor_unitario: item.valor || 1,
-          };
-        }),
-    };
-
-    const resultadoEtiqueta = await gerarEtiquetaReversa(
-      pedidoAdaptado,
-      String(pedido.numero)
-    );
+    const resultadoEtiqueta = await criarLogisticaReversaBling({
+      idPedido:          pedido.id,
+      numeroPedido,
+      nome,
+      cpf,
+      cep,
+      endereco,
+      numero,
+      complemento:       complemento || '',
+      bairro,
+      cidade,
+      uf,
+      itensSelecionados,
+      valorTotal:        pedido.valorTotal || 10,
+    });
 
     let etiqueta: EtiquetaMelhorEnvio | undefined;
 

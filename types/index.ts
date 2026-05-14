@@ -12,35 +12,6 @@ export type StatusSolicitacao =
   | 'erro';
 
 
-export interface PedidoTray {
-  id: string;
-  numero: string;
-  status: string;
-  data_criacao: string;
-  valor_total: number;
-  cliente: {
-    nome: string;
-    email: string;
-    cpf: string;
-    // Endereço para coleta (Melhor Envio)
-    cep?: string;
-    endereco?: string;
-    numero?: string;
-    complemento?: string;
-    bairro?: string;
-    cidade?: string;
-    uf?: string;
-  };
-  itens: PedidoItem[];
-}
-
-export interface PedidoItem {
-  id: string;
-  nome: string;
-  quantidade: number;
-  valor_unitario: number;
-}
-
 
 export interface EtiquetaMelhorEnvio {
   id: string;

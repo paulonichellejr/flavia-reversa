@@ -9,7 +9,7 @@
  * 6. Abre processo de devolução (registra observação)
  */
 
-import type { RespostaAPI } from '@/types';
+import type { RespostaAPI, EtiquetaMelhorEnvio } from '@/types';
 import { getBlingToken } from './bling-token';
 
 const BASE_URL  = 'https://www.bling.com.br/Api/v3';
@@ -489,6 +489,201 @@ export async function abrirDevolucaoBling(
     return {
       sucesso: false,
       erro: 'Falha ao registrar no sistema interno. Tente novamente.',
+    };
+  }
+}
+
+// ─── Criar Logística Reversa pelo Bling ──────────────────────
+// Usa o módulo nativo do Bling (POST /logisticas/reversas),
+// que internamente aciona o Melhor Envio e gera a etiqueta do tipo
+// correto: "Logística Reversa" (não "Agência/Ponto Parceiro").
+export async function criarLogisticaReversaBling(params: {
+  idPedido: number;
+  numeroPedido: string;
+  nome: string;
+  cpf: string;
+  cep: string;
+  endereco: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
+  cidade: string;
+  uf: string;
+  itensSelecionados: { id: number; quantidade: number }[];
+  valorTotal: number;
+}): Promise<RespostaAPI<EtiquetaMelhorEnvio>> {
+  try {
+    // MODO_TESTE: retorna dados simulados sem chamar a API real
+    const modoTeste = process.env.MELHOR_ENVIO_MODO_TESTE === 'true';
+    if (modoTeste) {
+      console.log('[Bling/Reversa] 🔵 MODO TESTE — Retornando etiqueta simulada (sem chamada à API).');
+      return {
+        sucesso: true,
+        dados: {
+          id: 'TESTE-BLING-REVERSA',
+          protocolo: `BLING-REVERSA-TESTE-${Date.now()}`,
+          codigo_postagem: 'TESTE000000000BR',
+          instrucoes: '⚠️ MODO TESTE — Código simulado. Em produção, o código real dos Correios será exibido aqui.',
+          prazo_postagem: '5 dias úteis após receber esta confirmação',
+        },
+        mensagem: 'Logística reversa simulada com sucesso (modo teste).',
+      };
+    }
+
+    // ── Valida variáveis de ambiente da loja ──────────────────
+    const cnpjLoja = (process.env.LOJA_CNPJ || '').replace(/\D/g, '');
+    const cepLoja  = (process.env.LOJA_CEP  || '').replace(/\D/g, '');
+    if (!cnpjLoja || !cepLoja || !process.env.LOJA_RAZAO_SOCIAL) {
+      console.error('[Bling/Reversa] ❌ Variáveis de ambiente da loja não configuradas (LOJA_CNPJ, LOJA_CEP, LOJA_RAZAO_SOCIAL).');
+      return {
+        sucesso: false,
+        erro: 'Erro de configuração interna. Nossa equipe já foi avisada e irá te enviar a etiqueta por e-mail em breve! 💛',
+      };
+    }
+
+    const cpfLimpo = params.cpf.replace(/\D/g, '');
+    const cepLimpo = params.cep.replace(/\D/g, '');
+
+    // Peso estimado: 0,3 kg por item (mínimo 0,3 kg total)
+    const pesoTotal = Math.max(
+      params.itensSelecionados.reduce((acc, i) => acc + 0.3 * i.quantidade, 0),
+      0.3
+    );
+
+    const payload = {
+      pedidoVenda: {
+        id: params.idPedido,
+      },
+      remetente: {
+        nome:        params.nome,
+        cpf:         cpfLimpo,
+        telefone:    '',
+        cep:         cepLimpo,
+        endereco:    params.endereco,
+        numero:      params.numero,
+        complemento: params.complemento || '',
+        bairro:      params.bairro,
+        cidade:      params.cidade,
+        uf:          params.uf,
+      },
+      destinatario: {
+        nome:        process.env.LOJA_RAZAO_SOCIAL,
+        cpfCnpj:     cnpjLoja,
+        cep:         cepLoja,
+        endereco:    process.env.LOJA_ENDERECO || '',
+        numero:      process.env.LOJA_NUMERO   || '',
+        complemento: process.env.LOJA_COMPLEMENTO || '',
+        bairro:      process.env.LOJA_BAIRRO   || '',
+        cidade:      process.env.LOJA_CIDADE   || '',
+        uf:          process.env.LOJA_UF       || '',
+      },
+      itens: params.itensSelecionados.map((i) => ({
+        produto:    { id: i.id },
+        quantidade: i.quantidade,
+      })),
+      volume: {
+        peso:          pesoTotal,
+        largura:       15,   // cm
+        altura:        10,   // cm
+        profundidade:  20,   // cm
+        valorDeclarado: params.valorTotal > 0 ? params.valorTotal : 10,
+      },
+    };
+
+    console.log('[Bling/Reversa] Criando logística reversa — pedido', params.numeroPedido,
+      '| itens:', params.itensSelecionados.length,
+      '| peso:', pesoTotal, 'kg');
+
+    const hdrs = await headers();
+    const res = await fetch(`${BASE_URL}/logisticas/reversas`, {
+      method:  'POST',
+      headers: hdrs,
+      body:    JSON.stringify(payload),
+    });
+
+    let json: Record<string, unknown> = {};
+    try { json = await res.json(); } catch { /* body vazio */ }
+
+    if (!res.ok) {
+      console.error('[Bling/Reversa] Erro HTTP', res.status, '— resposta completa:', JSON.stringify(json));
+      return {
+        sucesso: false,
+        erro: 'Não conseguimos registrar a devolução no sistema. Nossa equipe será notificada e entrará em contato em breve. 💛',
+      };
+    }
+
+    // Log completo para diagnóstico inicial (pode ser removido após validar em produção)
+    console.log('[Bling/Reversa] ✅ Resposta completa:', JSON.stringify(json));
+
+    const reversa = (json?.data ?? json) as Record<string, unknown>;
+    const reversaId = reversa?.id ?? reversa?.numero ?? '';
+
+    // ── Extrai o código de rastreio da resposta imediata ──────
+    // Tenta vários campos pois a estrutura exata depende da versão da API Bling
+    let codigoPostagem: string =
+      ((reversa?.etiqueta as Record<string, unknown>)?.codigoRastreamento as string) ??
+      (reversa?.codigoRastreamento as string) ??
+      (reversa?.rastreamento as string)       ??
+      ((reversa?.objeto as Record<string, unknown>)?.codigoRastreamento as string) ??
+      '';
+
+    // ── Polling: Melhor Envio processa de forma assíncrona ────
+    // O Bling pode levar alguns segundos para processar a integração com o ME.
+    // Aguardamos até 4 tentativas × 4 segundos = até 16 segundos extras.
+    if (!codigoPostagem && reversaId) {
+      console.log('[Bling/Reversa] Código não disponível imediatamente — polling por até 4 tentativas...');
+      for (let tentativa = 1; tentativa <= 4 && !codigoPostagem; tentativa++) {
+        await new Promise<void>((r) => setTimeout(r, 4000));
+        try {
+          const pollRes = await fetch(`${BASE_URL}/logisticas/reversas/${reversaId}`, {
+            headers: await headers(),
+            cache: 'no-store',
+          });
+          if (pollRes.ok) {
+            const pollJson = await pollRes.json().catch(() => ({}));
+            console.log(`[Bling/Reversa] Polling ${tentativa} — resposta:`, JSON.stringify(pollJson));
+            const pollData = (pollJson?.data ?? pollJson) as Record<string, unknown>;
+            codigoPostagem =
+              ((pollData?.etiqueta as Record<string, unknown>)?.codigoRastreamento as string) ??
+              (pollData?.codigoRastreamento as string) ??
+              (pollData?.rastreamento as string)       ??
+              ((pollData?.objeto as Record<string, unknown>)?.codigoRastreamento as string) ??
+              '';
+            if (codigoPostagem) {
+              console.log(`[Bling/Reversa] ✅ Código obtido na tentativa ${tentativa}:`, codigoPostagem);
+            }
+          }
+        } catch (e) {
+          console.warn(`[Bling/Reversa] Polling ${tentativa} falhou:`, e);
+        }
+      }
+    }
+
+    if (!codigoPostagem) {
+      console.warn('[Bling/Reversa] ⚠️ Código de rastreio não disponível após polling — o Bling/ME enviará por e-mail ao cliente.');
+    }
+
+    const instrucoes = codigoPostagem
+      ? 'Leve o produto embalado até qualquer agência dos Correios e informe o código abaixo no balcão. O envio é gratuito para você! 💛'
+      : 'Sua solicitação foi registrada! O código de rastreio será enviado para o seu e-mail em breve. Aguarde e leve o produto embalado até qualquer agência dos Correios. O envio é gratuito! 💛';
+
+    return {
+      sucesso: true,
+      dados: {
+        id:             String(reversaId),
+        protocolo:      String(reversaId),
+        codigo_postagem: codigoPostagem,
+        instrucoes,
+        prazo_postagem: '5 dias úteis após receber esta confirmação',
+      },
+      mensagem: 'Logística reversa criada com sucesso pelo Bling!',
+    };
+
+  } catch (error) {
+    console.error('[Bling/Reversa] Erro geral:', error);
+    return {
+      sucesso: false,
+      erro: 'Ocorreu um problema ao gerar sua etiqueta. Não se preocupe, nossa equipe já foi notificada!',
     };
   }
 }
