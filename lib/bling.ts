@@ -493,10 +493,13 @@ export async function abrirDevolucaoBling(
   }
 }
 
-// ─── Criar Logística Reversa pelo Bling ──────────────────────
-// Usa o módulo nativo do Bling (POST /logisticas/reversas),
-// que internamente aciona o Melhor Envio e gera a etiqueta do tipo
-// correto: "Logística Reversa" (não "Agência/Ponto Parceiro").
+// ─── Gerar etiqueta de Logística Reversa via Melhor Envio ────
+// O endpoint Bling POST /logisticas/reversas não existe na API pública.
+// Chamamos o Melhor Envio diretamente, usando descoberta automática do
+// serviço correto ("Logística Reversa") via POST /me/shipment/calculate.
+//
+// Para forçar um serviço específico, configure MELHOR_ENVIO_SERVICO_REVERSA_ID
+// no Vercel com o ID do serviço de Logística Reversa da sua conta ME.
 export async function criarLogisticaReversaBling(params: {
   idPedido: number;
   numeroPedido: string;
@@ -513,154 +516,250 @@ export async function criarLogisticaReversaBling(params: {
   valorTotal: number;
 }): Promise<RespostaAPI<EtiquetaMelhorEnvio>> {
   try {
-    // MODO_TESTE: retorna dados simulados sem chamar a API real
+    // ── Modo teste: simula sem chamar APIs externas ───────────
     const modoTeste = process.env.MELHOR_ENVIO_MODO_TESTE === 'true';
     if (modoTeste) {
-      console.log('[Bling/Reversa] 🔵 MODO TESTE — Retornando etiqueta simulada (sem chamada à API).');
+      console.log('[ME/Reversa] 🔵 MODO TESTE — Etiqueta simulada (nenhuma API chamada).');
       return {
         sucesso: true,
         dados: {
-          id: 'TESTE-BLING-REVERSA',
-          protocolo: `BLING-REVERSA-TESTE-${Date.now()}`,
+          id:             'TESTE-ME-REVERSA',
+          protocolo:      `ME-REVERSA-TESTE-${Date.now()}`,
           codigo_postagem: 'TESTE000000000BR',
-          instrucoes: '⚠️ MODO TESTE — Código simulado. Em produção, o código real dos Correios será exibido aqui.',
+          instrucoes:     '⚠️ MODO TESTE — Código simulado. Em produção, o código real será exibido aqui.',
           prazo_postagem: '5 dias úteis após receber esta confirmação',
         },
-        mensagem: 'Logística reversa simulada com sucesso (modo teste).',
+        mensagem: 'Etiqueta simulada (modo teste).',
       };
     }
 
-    // ── Valida variáveis de ambiente da loja ──────────────────
-    const cnpjLoja = (process.env.LOJA_CNPJ || '').replace(/\D/g, '');
-    const cepLoja  = (process.env.LOJA_CEP  || '').replace(/\D/g, '');
-    if (!cnpjLoja || !cepLoja || !process.env.LOJA_RAZAO_SOCIAL) {
-      console.error('[Bling/Reversa] ❌ Variáveis de ambiente da loja não configuradas (LOJA_CNPJ, LOJA_CEP, LOJA_RAZAO_SOCIAL).');
-      return {
-        sucesso: false,
-        erro: 'Erro de configuração interna. Nossa equipe já foi avisada e irá te enviar a etiqueta por e-mail em breve! 💛',
-      };
+    // ── Configuração ME (sempre produção) ─────────────────────
+    const ME_URL      = 'https://melhorenvio.com.br/api/v2';
+    const ME_TOKEN    = process.env.MELHOR_ENVIO_TOKEN;
+    const LOJA_EMAIL  = process.env.LOJA_EMAIL || 'contato@lojaflaviaorganiza.com.br';
+
+    if (!ME_TOKEN) {
+      console.error('[ME/Reversa] ❌ MELHOR_ENVIO_TOKEN não configurado.');
+      return { sucesso: false, erro: 'Erro de configuração interna. Nossa equipe entrará em contato em breve! 💛' };
     }
 
-    const cpfLimpo = params.cpf.replace(/\D/g, '');
-    const cepLimpo = params.cep.replace(/\D/g, '');
+    const meHeaders = () => ({
+      'Authorization': `Bearer ${ME_TOKEN}`,
+      'Content-Type':  'application/json',
+      'Accept':        'application/json',
+      'User-Agent':    `Loja Flávia Organiza (${LOJA_EMAIL})`,
+    });
 
-    // Peso estimado: 0,3 kg por item (mínimo 0,3 kg total)
+    const cpfLimpo  = params.cpf.replace(/\D/g, '');
+    const cepLimpo  = params.cep.replace(/\D/g, '');
+    const cepLoja   = (process.env.LOJA_CEP || '').replace(/\D/g, '');
+    const cnpjLoja  = (process.env.LOJA_CNPJ || '').replace(/\D/g, '');
+
+    if (!cepLoja) {
+      console.error('[ME/Reversa] ❌ LOJA_CEP não configurado.');
+      return { sucesso: false, erro: 'Erro de configuração interna. Nossa equipe entrará em contato em breve! 💛' };
+    }
+
     const pesoTotal = Math.max(
       params.itensSelecionados.reduce((acc, i) => acc + 0.3 * i.quantidade, 0),
       0.3
     );
 
-    const payload = {
-      pedidoVenda: {
-        id: params.idPedido,
+    // ── Descobre o ID do serviço "Logística Reversa" ──────────
+    // Prioridade: env var MELHOR_ENVIO_SERVICO_REVERSA_ID → auto-discover → fallback PAC (1)
+    let servicoId = Number(process.env.MELHOR_ENVIO_SERVICO_REVERSA_ID || '0');
+
+    if (!servicoId) {
+      try {
+        const calcRes = await fetch(`${ME_URL}/me/shipment/calculate`, {
+          method:  'POST',
+          headers: meHeaders(),
+          body: JSON.stringify({
+            from:    { postal_code: cepLoja },
+            to:      { postal_code: cepLimpo },
+            package: { weight: pesoTotal, width: 15, height: 10, length: 20 },
+            options: { reverse: true },
+          }),
+        });
+
+        if (calcRes.ok) {
+          const calcJson = await calcRes.json().catch(() => []);
+          const lista: Record<string, unknown>[] = Array.isArray(calcJson)
+            ? calcJson
+            : Array.isArray((calcJson as Record<string, unknown>)?.data)
+              ? (calcJson as Record<string, unknown>).data as Record<string, unknown>[]
+              : [];
+
+          console.log('[ME/Reversa] Serviços disponíveis:',
+            lista.map((s) => `ID ${s.id}: ${s.name ?? s.description}`).join(' | ') || '(nenhum)');
+
+          const servicoLR = lista.find((s) => {
+            const nome = String(s?.name ?? s?.description ?? '').toLowerCase();
+            return nome.includes('reversa') || nome.includes('reverso') || nome.includes('reversal');
+          });
+
+          if (servicoLR) {
+            servicoId = Number(servicoLR.id);
+            console.log(`[ME/Reversa] ✅ Serviço "Logística Reversa" detectado: ID ${servicoId} (${servicoLR.name ?? servicoLR.description})`);
+          } else {
+            servicoId = 1; // PAC como fallback
+            console.warn('[ME/Reversa] ⚠️ Serviço específico de Logística Reversa não encontrado na conta ME.',
+              '→ Usando PAC (ID 1) com options.reverse:true.',
+              '→ Para fixar o serviço correto, defina MELHOR_ENVIO_SERVICO_REVERSA_ID no Vercel.');
+          }
+        } else {
+          servicoId = 1;
+          console.warn('[ME/Reversa] ⚠️ Falha ao calcular serviços — usando PAC (ID 1). Status:', calcRes.status);
+        }
+      } catch (e) {
+        servicoId = 1;
+        console.warn('[ME/Reversa] ⚠️ Erro na descoberta de serviço:', e);
+      }
+    } else {
+      console.log(`[ME/Reversa] Usando serviço fixo via env: ID ${servicoId}`);
+    }
+
+    // ── 1. Adiciona ao carrinho ME ─────────────────────────────
+    const carrinhoPayload = {
+      from: {
+        name:        params.nome,
+        email:       process.env.MELHOR_ENVIO_EMAIL_TESTE || LOJA_EMAIL,
+        document:    cpfLimpo,
+        phone:       '',
+        address:     params.endereco,
+        complement:  params.complemento || '',
+        number:      params.numero,
+        district:    params.bairro,
+        city:        params.cidade,
+        state_abbr:  params.uf,
+        country_id:  'BR',
+        postal_code: cepLimpo,
+        note:        `Devolução pedido #${params.numeroPedido}`,
       },
-      remetente: {
-        nome:        params.nome,
-        cpf:         cpfLimpo,
-        telefone:    '',
-        cep:         cepLimpo,
-        endereco:    params.endereco,
-        numero:      params.numero,
-        complemento: params.complemento || '',
-        bairro:      params.bairro,
-        cidade:      params.cidade,
-        uf:          params.uf,
+      to: {
+        name:        process.env.LOJA_RAZAO_SOCIAL || 'FLK COMERCIO E SERVICOS DE ORGANIZACAO LTDA',
+        email:       LOJA_EMAIL,
+        document:    cnpjLoja,
+        phone:       '',
+        address:     process.env.LOJA_ENDERECO || '',
+        complement:  process.env.LOJA_COMPLEMENTO || '',
+        number:      process.env.LOJA_NUMERO || '',
+        district:    process.env.LOJA_BAIRRO || '',
+        city:        process.env.LOJA_CIDADE || '',
+        state_abbr:  process.env.LOJA_UF || '',
+        country_id:  'BR',
+        postal_code: cepLoja,
       },
-      destinatario: {
-        nome:        process.env.LOJA_RAZAO_SOCIAL,
-        cpfCnpj:     cnpjLoja,
-        cep:         cepLoja,
-        endereco:    process.env.LOJA_ENDERECO || '',
-        numero:      process.env.LOJA_NUMERO   || '',
-        complemento: process.env.LOJA_COMPLEMENTO || '',
-        bairro:      process.env.LOJA_BAIRRO   || '',
-        cidade:      process.env.LOJA_CIDADE   || '',
-        uf:          process.env.LOJA_UF       || '',
-      },
-      itens: params.itensSelecionados.map((i) => ({
-        produto:    { id: i.id },
-        quantidade: i.quantidade,
-      })),
-      volume: {
-        peso:          pesoTotal,
-        largura:       15,   // cm
-        altura:        10,   // cm
-        profundidade:  20,   // cm
-        valorDeclarado: params.valorTotal > 0 ? params.valorTotal : 10,
+      products: [{
+        name:           `Devolução pedido #${params.numeroPedido}`,
+        quantity:       params.itensSelecionados.reduce((acc, i) => acc + i.quantidade, 0) || 1,
+        unitary_value:  params.valorTotal > 0 ? params.valorTotal : 10,
+        weight:         pesoTotal,
+      }],
+      service: servicoId,
+      volumes: [{ height: 10, width: 15, length: 20, weight: pesoTotal }],
+      tag:      `reversa-${params.numeroPedido}`,
+      platform: 'Loja Flávia Organiza',
+      options: {
+        reverse:        true,
+        non_commercial: true,
+        invoice:        { key: '' },
       },
     };
 
-    console.log('[Bling/Reversa] Criando logística reversa — pedido', params.numeroPedido,
-      '| itens:', params.itensSelecionados.length,
-      '| peso:', pesoTotal, 'kg');
+    console.log('[ME/Reversa] Criando carrinho — pedido', params.numeroPedido,
+      '| serviço ID:', servicoId, '| peso:', pesoTotal, 'kg');
 
-    const hdrs = await headers();
-    const res = await fetch(`${BASE_URL}/logisticas/reversas`, {
+    const carrinhoRes = await fetch(`${ME_URL}/me/cart`, {
       method:  'POST',
-      headers: hdrs,
-      body:    JSON.stringify(payload),
+      headers: meHeaders(),
+      body:    JSON.stringify(carrinhoPayload),
     });
 
-    let json: Record<string, unknown> = {};
-    try { json = await res.json(); } catch { /* body vazio */ }
-
-    if (!res.ok) {
-      console.error('[Bling/Reversa] Erro HTTP', res.status, '— resposta completa:', JSON.stringify(json));
-      return {
-        sucesso: false,
-        erro: 'Não conseguimos registrar a devolução no sistema. Nossa equipe será notificada e entrará em contato em breve. 💛',
-      };
+    if (!carrinhoRes.ok) {
+      const err = await carrinhoRes.json().catch(() => ({}));
+      console.error('[ME/Reversa] Erro no carrinho:', JSON.stringify(err));
+      return { sucesso: false, erro: 'Não conseguimos preparar a etiqueta de envio. Nossa equipe entrará em contato! 💛' };
     }
 
-    // Log completo para diagnóstico inicial (pode ser removido após validar em produção)
-    console.log('[Bling/Reversa] ✅ Resposta completa:', JSON.stringify(json));
+    const carrinho = await carrinhoRes.json() as Record<string, unknown>;
+    const itemId   = String(carrinho?.id ?? '');
+    console.log('[ME/Reversa] ✅ Carrinho criado. ID:', itemId, '| Serviço:', carrinho?.service);
 
-    const reversa = (json?.data ?? json) as Record<string, unknown>;
-    const reversaId = reversa?.id ?? reversa?.numero ?? '';
+    // ── 2. Checkout (compra a etiqueta) ───────────────────────
+    const checkoutRes = await fetch(`${ME_URL}/me/shipment/checkout`, {
+      method:  'POST',
+      headers: meHeaders(),
+      body:    JSON.stringify({ orders: [itemId] }),
+    });
 
-    // ── Extrai o código de rastreio da resposta imediata ──────
-    // Tenta vários campos pois a estrutura exata depende da versão da API Bling
+    if (!checkoutRes.ok) {
+      console.error('[ME/Reversa] Erro no checkout:', checkoutRes.status);
+      return { sucesso: false, erro: 'Não conseguimos emitir a etiqueta. Nossa equipe entrará em contato! 💛' };
+    }
+    console.log('[ME/Reversa] ✅ Checkout concluído.');
+
+    // ── 3. Gera a etiqueta ────────────────────────────────────
+    const gerarRes = await fetch(`${ME_URL}/me/shipment/generate`, {
+      method:  'POST',
+      headers: meHeaders(),
+      body:    JSON.stringify({ orders: [itemId] }),
+    });
+
+    if (!gerarRes.ok) {
+      console.error('[ME/Reversa] Erro ao gerar etiqueta:', gerarRes.status);
+      return { sucesso: false, erro: 'Etiqueta criada mas não conseguimos gerá-la. Nossa equipe irá te enviar por e-mail! 💛' };
+    }
+
+    const gerarJson = await gerarRes.json() as Record<string, unknown>;
+    console.log('[ME/Reversa] Generate response:', JSON.stringify(gerarJson));
+
+    const pedidoGerado = (gerarJson?.[itemId] ?? Object.values(gerarJson ?? {})[0] ?? gerarJson) as Record<string, unknown>;
     let codigoPostagem: string =
-      ((reversa?.etiqueta as Record<string, unknown>)?.codigoRastreamento as string) ??
-      (reversa?.codigoRastreamento as string) ??
-      (reversa?.rastreamento as string)       ??
-      ((reversa?.objeto as Record<string, unknown>)?.codigoRastreamento as string) ??
+      (pedidoGerado?.tracking as string) ??
+      (pedidoGerado?.tracking_number as string) ??
+      (pedidoGerado?.code as string) ??
       '';
 
-    // ── Polling: Melhor Envio processa de forma assíncrona ────
-    // O Bling pode levar alguns segundos para processar a integração com o ME.
-    // Aguardamos até 4 tentativas × 4 segundos = até 16 segundos extras.
-    if (!codigoPostagem && reversaId) {
-      console.log('[Bling/Reversa] Código não disponível imediatamente — polling por até 4 tentativas...');
-      for (let tentativa = 1; tentativa <= 4 && !codigoPostagem; tentativa++) {
-        await new Promise<void>((r) => setTimeout(r, 4000));
+    // ── 4. Polling para código de rastreio (Correios é assíncrono) ─
+    if (!codigoPostagem) {
+      console.log('[ME/Reversa] Código não disponível imediatamente — polling por até 4 tentativas × 3s...');
+      const tagPedido = `reversa-${params.numeroPedido}`;
+      const agora     = Date.now();
+
+      for (let t = 1; t <= 4 && !codigoPostagem; t++) {
+        await new Promise<void>((r) => setTimeout(r, 3000));
         try {
-          const pollRes = await fetch(`${BASE_URL}/logisticas/reversas/${reversaId}`, {
-            headers: await headers(),
-            cache: 'no-store',
-          });
+          const pollRes = await fetch(`${ME_URL}/me/orders?per_page=20`, { headers: meHeaders() });
           if (pollRes.ok) {
-            const pollJson = await pollRes.json().catch(() => ({}));
-            console.log(`[Bling/Reversa] Polling ${tentativa} — resposta:`, JSON.stringify(pollJson));
-            const pollData = (pollJson?.data ?? pollJson) as Record<string, unknown>;
-            codigoPostagem =
-              ((pollData?.etiqueta as Record<string, unknown>)?.codigoRastreamento as string) ??
-              (pollData?.codigoRastreamento as string) ??
-              (pollData?.rastreamento as string)       ??
-              ((pollData?.objeto as Record<string, unknown>)?.codigoRastreamento as string) ??
-              '';
-            if (codigoPostagem) {
-              console.log(`[Bling/Reversa] ✅ Código obtido na tentativa ${tentativa}:`, codigoPostagem);
+            const pollJson = await pollRes.json() as Record<string, unknown>;
+            const orders: Record<string, unknown>[] =
+              Array.isArray((pollJson as Record<string, unknown>)?.data)
+                ? (pollJson as Record<string, unknown>).data as Record<string, unknown>[]
+                : Array.isArray(pollJson) ? pollJson as Record<string, unknown>[] : [];
+
+            const encontrado = orders.find((o) => {
+              const oTag      = String(o?.tag ?? o?.reminder ?? '');
+              const criadoEm  = o?.created_at ? new Date(String(o.created_at)).getTime() : 0;
+              const foiRecente = agora - criadoEm < 120_000;
+              const temCodigo  = Boolean(o?.tracking ?? o?.self_tracking ?? '');
+              return oTag === tagPedido || (foiRecente && temCodigo);
+            });
+
+            if (encontrado) {
+              codigoPostagem = String(encontrado?.tracking ?? encontrado?.self_tracking ?? '');
+              if (codigoPostagem) console.log(`[ME/Reversa] ✅ Código obtido (tentativa ${t}):`, codigoPostagem);
             }
           }
         } catch (e) {
-          console.warn(`[Bling/Reversa] Polling ${tentativa} falhou:`, e);
+          console.warn(`[ME/Reversa] Polling ${t} falhou:`, e);
         }
+        if (!codigoPostagem) console.log(`[ME/Reversa] Tentativa ${t}: código ainda não disponível.`);
       }
-    }
 
-    if (!codigoPostagem) {
-      console.warn('[Bling/Reversa] ⚠️ Código de rastreio não disponível após polling — o Bling/ME enviará por e-mail ao cliente.');
+      if (!codigoPostagem) console.warn('[ME/Reversa] ⚠️ Código não disponível após polling — ME enviará por e-mail ao cliente.');
+    } else {
+      console.log('[ME/Reversa] Código obtido diretamente:', codigoPostagem);
     }
 
     const instrucoes = codigoPostagem
@@ -670,17 +769,17 @@ export async function criarLogisticaReversaBling(params: {
     return {
       sucesso: true,
       dados: {
-        id:             String(reversaId),
-        protocolo:      String(reversaId),
+        id:              itemId,
+        protocolo:       `ME-${itemId}`,
         codigo_postagem: codigoPostagem,
         instrucoes,
-        prazo_postagem: '5 dias úteis após receber esta confirmação',
+        prazo_postagem:  '5 dias úteis após receber esta confirmação',
       },
-      mensagem: 'Logística reversa criada com sucesso pelo Bling!',
+      mensagem: 'Etiqueta de logística reversa gerada com sucesso!',
     };
 
   } catch (error) {
-    console.error('[Bling/Reversa] Erro geral:', error);
+    console.error('[ME/Reversa] Erro geral:', error);
     return {
       sucesso: false,
       erro: 'Ocorreu um problema ao gerar sua etiqueta. Não se preocupe, nossa equipe já foi notificada!',
