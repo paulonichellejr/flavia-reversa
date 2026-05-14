@@ -565,8 +565,10 @@ export async function criarLogisticaReversaBling(params: {
       0.3
     );
 
-    // ── Descobre o ID do serviço "Logística Reversa" ──────────
-    // Prioridade: env var MELHOR_ENVIO_SERVICO_REVERSA_ID → auto-discover → fallback PAC (1)
+    // ── Descobre o ID do serviço disponível para a rota ──────────
+    // Calcula FROM=cliente TO=loja (direção física do retorno) com reverse:true
+    // e pega o primeiro serviço que atende a rota (PAC ou SEDEX dependendo da distância).
+    // Prioridade: env var MELHOR_ENVIO_SERVICO_REVERSA_ID → auto-discover → fallback SEDEX (2)
     let servicoId = Number(process.env.MELHOR_ENVIO_SERVICO_REVERSA_ID || '0');
 
     if (!servicoId) {
@@ -575,8 +577,8 @@ export async function criarLogisticaReversaBling(params: {
           method:  'POST',
           headers: meHeaders(),
           body: JSON.stringify({
-            from:    { postal_code: cepLoja },
-            to:      { postal_code: cepLimpo },
+            from:    { postal_code: cepLimpo },  // CEP do cliente (origem do retorno)
+            to:      { postal_code: cepLoja },   // CEP da loja (destino do retorno)
             package: { weight: pesoTotal, width: 15, height: 10, length: 20 },
             options: { reverse: true },
           }),
@@ -590,29 +592,28 @@ export async function criarLogisticaReversaBling(params: {
               ? (calcJson as Record<string, unknown>).data as Record<string, unknown>[]
               : [];
 
-          console.log('[ME/Reversa] Serviços disponíveis:',
-            lista.map((s) => `ID ${s.id}: ${s.name ?? s.description}`).join(' | ') || '(nenhum)');
+          // Filtra apenas serviços que atendem a rota (sem erro e com preço)
+          const disponiveis = lista.filter((s) => !s.error && Number(s.price ?? 0) > 0);
 
-          const servicoLR = lista.find((s) => {
-            const nome = String(s?.name ?? s?.description ?? '').toLowerCase();
-            return nome.includes('reversa') || nome.includes('reverso') || nome.includes('reversal');
-          });
+          console.log('[ME/Reversa] Serviços disponíveis para a rota:',
+            lista.map((s) => `ID ${s.id}: ${s.name ?? s.description}${s.error ? ' (indisponível)' : ` R$${s.price}`}`).join(' | ') || '(nenhum)');
 
-          if (servicoLR) {
-            servicoId = Number(servicoLR.id);
-            console.log(`[ME/Reversa] ✅ Serviço "Logística Reversa" detectado: ID ${servicoId} (${servicoLR.name ?? servicoLR.description})`);
+          if (disponiveis.length > 0) {
+            // Prefere PAC (mais barato) se disponível, senão pega o primeiro disponível
+            const pac  = disponiveis.find((s) => Number(s.id) === 1);
+            const best = pac ?? disponiveis[0];
+            servicoId  = Number(best.id);
+            console.log(`[ME/Reversa] ✅ Serviço selecionado: ID ${servicoId} (${best.name ?? best.description}) — R$${best.price}`);
           } else {
-            servicoId = 1; // PAC como fallback
-            console.warn('[ME/Reversa] ⚠️ Serviço específico de Logística Reversa não encontrado na conta ME.',
-              '→ Usando PAC (ID 1) com options.reverse:true.',
-              '→ Para fixar o serviço correto, defina MELHOR_ENVIO_SERVICO_REVERSA_ID no Vercel.');
+            servicoId = 2; // SEDEX como fallback (mais ampla cobertura que PAC)
+            console.warn('[ME/Reversa] ⚠️ Nenhum serviço disponível detectado — usando SEDEX (ID 2) como fallback.');
           }
         } else {
-          servicoId = 1;
-          console.warn('[ME/Reversa] ⚠️ Falha ao calcular serviços — usando PAC (ID 1). Status:', calcRes.status);
+          servicoId = 2;
+          console.warn('[ME/Reversa] ⚠️ Falha ao calcular serviços — usando SEDEX (ID 2). Status:', calcRes.status);
         }
       } catch (e) {
-        servicoId = 1;
+        servicoId = 2;
         console.warn('[ME/Reversa] ⚠️ Erro na descoberta de serviço:', e);
       }
     } else {
