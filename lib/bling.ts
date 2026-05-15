@@ -580,7 +580,7 @@ export async function criarLogisticaReversaBling(params: {
             from:    { postal_code: cepLimpo },  // CEP do cliente (origem do retorno)
             to:      { postal_code: cepLoja },   // CEP da loja (destino do retorno)
             package: { weight: pesoTotal, width: 15, height: 10, length: 20 },
-            options: { reverse: true },
+            options: { reverse: 2 },
           }),
         });
 
@@ -638,18 +638,19 @@ export async function criarLogisticaReversaBling(params: {
         note:        `Devolução pedido #${params.numeroPedido}`,
       },
       to: {
-        name:        process.env.LOJA_RAZAO_SOCIAL || 'FLK COMERCIO E SERVICOS DE ORGANIZACAO LTDA',
-        email:       LOJA_EMAIL,
-        document:    (process.env.LOJA_CPF_RESPONSAVEL || '').replace(/\D/g, ''),
-        phone:       '',
-        address:     process.env.LOJA_ENDERECO || '',
-        complement:  process.env.LOJA_COMPLEMENTO || '',
-        number:      process.env.LOJA_NUMERO || '',
-        district:    process.env.LOJA_BAIRRO || '',
-        city:        process.env.LOJA_CIDADE || '',
-        state_abbr:  process.env.LOJA_UF || '',
-        country_id:  'BR',
-        postal_code: cepLoja,
+        name:             process.env.LOJA_RAZAO_SOCIAL || 'FLK COMERCIO E SERVICOS DE ORGANIZACAO LTDA',
+        email:            LOJA_EMAIL,
+        document:         null,
+        company_document: cnpjLoja,
+        phone:            '',
+        address:          process.env.LOJA_ENDERECO || '',
+        complement:       process.env.LOJA_COMPLEMENTO || '',
+        number:           process.env.LOJA_NUMERO || '',
+        district:         process.env.LOJA_BAIRRO || '',
+        city:             process.env.LOJA_CIDADE || '',
+        state_abbr:       process.env.LOJA_UF || '',
+        country_id:       'BR',
+        postal_code:      cepLoja,
       },
       products: [{
         name:           `Devolução pedido #${params.numeroPedido}`,
@@ -662,7 +663,7 @@ export async function criarLogisticaReversaBling(params: {
       tag:      `reversa-${params.numeroPedido}`,
       platform: 'Loja Flávia Organiza',
       options: {
-        reverse:        true,
+        reverse:        2,    // 2 = Logística Reversa dos Correios (1 = Agência/Ponto Parceiro)
         non_commercial: true,
         invoice:        { key: '' },
       },
