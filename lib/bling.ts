@@ -665,7 +665,7 @@ export async function criarLogisticaReversaBling(params: {
       options: {
         reverse:        2,    // 2 = Logística Reversa dos Correios (1 = Agência/Ponto Parceiro)
         non_commercial: true,
-        invoice:        { key: '' },
+        // invoice não é aceito em envios de logística reversa
       },
     };
 
