@@ -198,16 +198,6 @@ function gerarHtmlEmail(p: {
       </td></tr>
     </table>`;
 
-  // Bloco de instrução para postagem
-  const blocoInstrucao = `
-    <table width="100%" cellpadding="0" cellspacing="0" style="background:#EAF4EF;border-left:4px solid ${COR_BTN};border-radius:0 8px 8px 0;margin-bottom:20px;">
-      <tr><td style="padding:14px 18px;">
-        <p style="margin:0;font-size:14px;line-height:1.7;color:${COR_INFO_TEXTO};">
-          📦 Leve o produto embalado até qualquer agência dos Correios e informe o código acima no balcão.
-          Não precisa imprimir nada — o código é suficiente para a postagem. O envio é gratuito! 💛
-        </p>
-      </td></tr>
-    </table>`;
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -225,7 +215,7 @@ function gerarHtmlEmail(p: {
         <tr>
           <td style="background:${COR_HEADER_TOPO};padding:6px 0;text-align:center;">
             <p style="margin:0;font-size:11px;letter-spacing:1px;color:${COR_TEXTO_SEC};">
-              Loja Flávia Organiza · Organização com carinho 💛
+              Loja Flávia Organiza
             </p>
           </td>
         </tr>
@@ -265,8 +255,6 @@ function gerarHtmlEmail(p: {
               </td></tr>
             </table>
 
-            ${blocoInstrucao}
-
             <p style="margin:0 0 24px;font-size:13px;color:${COR_TEXTO_MUTED};text-align:center;">
               ⏰ Prazo para postagem: <strong style="color:${COR_TEXTO_SEC};">${prazoPostagem}</strong>
             </p>
@@ -286,7 +274,7 @@ function gerarHtmlEmail(p: {
         <tr>
           <td style="background:${COR_RODAPE_BG};padding:20px 32px;text-align:center;border-top:1px solid ${COR_RODAPE_BORDA};">
             <p style="margin:0 0 4px;font-size:12px;color:${COR_HEADER_TEXTO};">
-              © ${new Date().getFullYear()} Loja Flávia Organiza — Organização com carinho 💛
+              © ${new Date().getFullYear()} Loja Flávia Organiza
             </p>
             <p style="margin:0;font-size:11px;color:${COR_HEADER};">
               Você recebeu este e-mail porque realizou uma solicitação de devolução em nosso site.

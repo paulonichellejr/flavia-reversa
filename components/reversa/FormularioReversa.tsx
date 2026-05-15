@@ -95,6 +95,11 @@ export function FormularioReversa() {
   });
 
   const descricaoValue = watch('descricao', '');
+  const motivoValue    = watch('motivo', '');
+
+  // Motivos que exigem foto obrigatória
+  const MOTIVOS_COM_FOTO = ['produto_defeituoso', 'produto_avariado', 'produto_errado'];
+  const fotoObrigatoria  = MOTIVOS_COM_FOTO.includes(motivoValue);
 
   // ── Busca endereço pelo CEP ──────────────────────────────────
   const buscarCep = async (cep: string) => {
@@ -187,8 +192,8 @@ export function FormularioReversa() {
 
   // ── Etapa 2: submete o formulário completo ───────────────────
   const onSubmit = async (data: FormData) => {
-    if (fotos.length === 0) {
-      setFotosErro('Adicione pelo menos uma foto do produto para continuar.');
+    if (fotoObrigatoria && fotos.length === 0) {
+      setFotosErro('Para este motivo, adicione pelo menos uma foto do produto para continuar.');
       return;
     }
     if (itensSelecionados.length === 0) {
